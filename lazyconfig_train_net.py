@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3.9
 # Copyright (c) Facebook, Inc. and its affiliates.
 """
 Training script using the new "LazyConfig" python config files.
@@ -60,8 +60,8 @@ from projects.ViTDet.configs.COCO.mask_rcnn_vitdet_b_100ep import (
 
 logger = logging.getLogger("detectron2")
 
-config_file = "./projects/ViTDet/configs/COCO/mask_rcnn_vitdet_b_100ep.py"
-# config_file = "./projects/ViTDet/configs/COCO/cascade_mask_rcnn_vitdet_b_100ep.py"
+# config_file = "./projects/ViTDet/configs/COCO/mask_rcnn_vitdet_b_100ep.py"
+config_file = "./projects/ViTDet/configs/COCO/cascade_mask_rcnn_vitdet_b_100ep.py"
 
 path_to_save = "result_robot_cascade_datasets_5000"
 
@@ -69,9 +69,10 @@ dataset_train_name = ["train_al_rihla", "train_beau_jeu", "train_conext_19", "tr
 dataset_test_name = [ "test_al_rihla", "test_beau_jeu", "test_conext_19", "test_conext_21", "test_fracas", "test_star_lancer", "test_telstar", "test_telstar_mechta", "test_torso", "test_uniforia" ]
 path_dataset = [ "Al_Rihla", "Beau_Jeu", "Conext_19", "Conext_21", "Fracas", "Star_Lancer", "Telstar", "Telstar_Mechta", "Torso", "Uniforia" ]
 
+
 def do_test(cfg, model):
     model.eval()
-    # print(cfg.dataloader.evaluator)
+    print(cfg.dataloader.evaluator)
     #cfg.model.backbone.net.img_size = 1024
     for dataset in dataset_test_name:
         cfg.dataloader.test.dataset.names = dataset
@@ -174,8 +175,7 @@ def main(args):
     
    
     if args.eval_only:
-        train.init_checkpoint = "./model_final_mask_rcnn.pth"
-        # train.init_checkpoint= "./" + path_to_save + "/model_final_cascade.pth"
+        train.init_checkpoint= "./" + path_to_save + "/model_final.pth"
         print(train)
         cfg.model.roi_heads.num_classes = 2
         cfg.model.backbone.norm = "BN"
