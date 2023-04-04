@@ -48,6 +48,7 @@ def mask_rcnn_loss(pred_mask_logits: torch.Tensor, instances: List[Instances], v
     Returns:
         mask_loss (Tensor): A scalar tensor containing the loss.
     """
+    print("MASK RCNN LOSS")
     cls_agnostic_mask = pred_mask_logits.size(1) == 1
     total_num_masks = pred_mask_logits.size(0)
     mask_side_len = pred_mask_logits.size(2)

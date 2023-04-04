@@ -13,7 +13,7 @@ from detectron2.evaluation import COCOEvaluator
 dataloader = OmegaConf.create()
 
 dataloader.train = L(build_detection_train_loader)(
-    dataset=L(get_detection_dataset_dicts)(names="coco_2017_train"),
+    dataset=L(get_detection_dataset_dicts)(names="ball_train"),
     mapper=L(DatasetMapper)(
         is_train=True,
         augmentations=[
@@ -25,14 +25,14 @@ dataloader.train = L(build_detection_train_loader)(
             L(T.RandomFlip)(horizontal=True),
         ],
         image_format="BGR",
-        use_instance_mask=True,
+        use_instance_mask=False,
     ),
     total_batch_size=16,
-    num_workers=4,
+    num_workers=1,
 )
 
 dataloader.test = L(build_detection_test_loader)(
-    dataset=L(get_detection_dataset_dicts)(names="coco_2017_val", filter_empty=False),
+    dataset=L(get_detection_dataset_dicts)(names="ball_test", filter_empty=False),
     mapper=L(DatasetMapper)(
         is_train=False,
         augmentations=[
@@ -40,7 +40,7 @@ dataloader.test = L(build_detection_test_loader)(
         ],
         image_format="${...train.mapper.image_format}",
     ),
-    num_workers=4,
+    num_workers=1,
 )
 
 dataloader.evaluator = L(COCOEvaluator)(

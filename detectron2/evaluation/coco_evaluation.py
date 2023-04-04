@@ -14,12 +14,13 @@ import torch
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 from tabulate import tabulate
+import time
 
 import detectron2.utils.comm as comm
 from detectron2.config import CfgNode
 from detectron2.data import MetadataCatalog
 from detectron2.data.datasets.coco import convert_to_coco_json
-from detectron2.structures import Boxes, BoxMode, pairwise_iou
+from detectron2.structures import Boxes, BoxMode, pairwise_iou, matched_pairwise_iou
 from detectron2.utils.file_io import PathManager
 from detectron2.utils.logger import create_small_table
 
@@ -29,6 +30,8 @@ try:
     from detectron2.evaluation.fast_eval_api import COCOeval_opt
 except ImportError:
     COCOeval_opt = COCOeval
+
+
 
 
 class COCOEvaluator(DatasetEvaluator):
@@ -155,6 +158,7 @@ class COCOEvaluator(DatasetEvaluator):
         self._predictions = []
 
     def process(self, inputs, outputs):
+        # print("PROCESS METHOD")
         """
         Args:
             inputs: the inputs to a COCO model (e.g., GeneralizedRCNN).
@@ -168,6 +172,7 @@ class COCOEvaluator(DatasetEvaluator):
 
             if "instances" in output:
                 instances = output["instances"].to(self._cpu_device)
+                # print(instances)
                 prediction["instances"] = instances_to_coco_json(instances, input["image_id"])
             if "proposals" in output:
                 prediction["proposals"] = output["proposals"].to(self._cpu_device)
@@ -179,6 +184,7 @@ class COCOEvaluator(DatasetEvaluator):
         Args:
             img_ids: a list of image IDs to evaluate on. Default to None for the whole dataset
         """
+        print("EVALUATINGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG")
         if self._distributed:
             comm.synchronize()
             predictions = comm.gather(self._predictions, dst=0)
@@ -188,6 +194,8 @@ class COCOEvaluator(DatasetEvaluator):
                 return {}
         else:
             predictions = self._predictions
+
+        #print(predictions)
 
         if len(predictions) == 0:
             self._logger.warning("[COCOEvaluator] Did not receive valid predictions.")
@@ -200,6 +208,8 @@ class COCOEvaluator(DatasetEvaluator):
                 torch.save(predictions, f)
 
         self._results = OrderedDict()
+        print(type(predictions))
+        # time.sleep(10)
         if "proposals" in predictions[0]:
             self._eval_box_proposals(predictions)
         if "instances" in predictions[0]:
@@ -223,8 +233,14 @@ class COCOEvaluator(DatasetEvaluator):
         """
         Evaluate predictions. Fill self._results with the metrics of the tasks.
         """
+        print("EVAL PREDICTIONS METHOD")
+        _evaluate_box_proposals(predictions, self._coco_api)
+
+
+        
         self._logger.info("Preparing results for COCO format ...")
         coco_results = list(itertools.chain(*[x["instances"] for x in predictions]))
+        #print(coco_results) # chegou vazio aqui
         tasks = self._tasks or self._tasks_from_predictions(coco_results)
 
         # unmap the category ids for COCO
@@ -268,7 +284,7 @@ class COCOEvaluator(DatasetEvaluator):
                     coco_results,
                     task,
                     kpt_oks_sigmas=self._kpt_oks_sigmas,
-                    cocoeval_fn=COCOeval_opt if self._use_fast_impl else COCOeval,
+                    use_fast_impl=self._use_fast_impl,
                     img_ids=img_ids,
                     max_dets_per_image=self._max_dets_per_image,
                 )
@@ -286,6 +302,7 @@ class COCOEvaluator(DatasetEvaluator):
         Evaluate the box proposals in predictions.
         Fill self._results with the metrics for "box_proposals" task.
         """
+        print("EVAL BOX PROPOSALS METHOD")
         if self._output_dir:
             # Saving generated box proposals to file.
             # Predicted box_proposals are in XYXY_ABS mode.
@@ -334,6 +351,8 @@ class COCOEvaluator(DatasetEvaluator):
             a dict of {metric name: score}
         """
 
+        print("DERIVE COCO RESULTSSSSSSSSSSSSSSSSSSSS!!!!")
+
         metrics = {
             "bbox": ["AP", "AP50", "AP75", "APs", "APm", "APl"],
             "segm": ["AP", "AP50", "AP75", "APs", "APm", "APl"],
@@ -348,7 +367,14 @@ class COCOEvaluator(DatasetEvaluator):
         results = {
             metric: float(coco_eval.stats[idx] * 100 if coco_eval.stats[idx] >= 0 else "nan")
             for idx, metric in enumerate(metrics)
+            
+            
         }
+
+        f = open("Results_rcnn_macro.txt", "a")
+        f.write("\n " + str(results))
+        f.close()
+
         self._logger.info(
             "Evaluation results for {}: \n".format(iou_type) + create_small_table(results)
         )
@@ -356,6 +382,8 @@ class COCOEvaluator(DatasetEvaluator):
             self._logger.info("Some metrics cannot be computed and is shown as NaN.")
 
         if class_names is None or len(class_names) <= 1:
+            print("class names is none :(")
+            print(results)
             return results
         # Compute per-category AP
         # from https://github.com/facebookresearch/Detectron/blob/a6a835f5b8208c45d0dce217ce9bbda915f44df7/detectron/datasets/json_dataset_evaluator.py#L222-L252 # noqa
@@ -370,7 +398,10 @@ class COCOEvaluator(DatasetEvaluator):
             precision = precisions[:, :, idx, 0, -1]
             precision = precision[precision > -1]
             ap = np.mean(precision) if precision.size else float("nan")
+            print("AVERAGE PRECISION: " + str(ap))
             results_per_category.append(("{}".format(name), float(ap * 100)))
+
+        # print("AVERAGE PRECISION: " + str(ap))
 
         # tabulate it
         N_COLS = min(6, len(results_per_category) * 2)
@@ -384,6 +415,11 @@ class COCOEvaluator(DatasetEvaluator):
             numalign="left",
         )
         self._logger.info("Per-category {} AP: \n".format(iou_type) + table)
+
+        f = open("Results_rcnn_macro.txt", "a")
+        f.write("\nPer-category {} AP: \n".format(iou_type) + str(table))
+        f.close()
+        
 
         results.update({"AP-" + name: ap for name, ap in results_per_category})
         return results
@@ -450,6 +486,7 @@ def instances_to_coco_json(instances, img_id):
         results.append(result)
     return results
 
+    
 
 # inspired from Detectron:
 # https://github.com/facebookresearch/Detectron/blob/a6a835f5b8208c45d0dce217ce9bbda915f44df7/detectron/datasets/json_dataset_evaluator.py#L255 # noqa
@@ -459,6 +496,9 @@ def _evaluate_box_proposals(dataset_predictions, coco_api, thresholds=None, area
     faster alternative to the official COCO API recall evaluation code. However,
     it produces slightly different results.
     """
+    print("TEM QUE ENTRAR AQUI")
+    print(dataset_predictions)
+    # print(str(Boxes(dataset_predictions["instances"][0].get("pred_boxes").item())))
     # Record max overlap value for each gt box
     # Return vector of overlap values
     areas = {
@@ -485,25 +525,30 @@ def _evaluate_box_proposals(dataset_predictions, coco_api, thresholds=None, area
     area_range = area_ranges[areas[area]]
     gt_overlaps = []
     num_pos = 0
+    i = 0
+    iou = []
+    gt_classes = []
+    prediction_classes = []
 
     for prediction_dict in dataset_predictions:
-        predictions = prediction_dict["proposals"]
+        predictions = prediction_dict["instances"]
 
         # sort predictions in descending order
         # TODO maybe remove this and make it explicit in the documentation
-        inds = predictions.objectness_logits.sort(descending=True)[1]
-        predictions = predictions[inds]
 
         ann_ids = coco_api.getAnnIds(imgIds=prediction_dict["image_id"])
         anno = coco_api.loadAnns(ann_ids)
+        print("anno: " + str(anno))
         gt_boxes = [
             BoxMode.convert(obj["bbox"], BoxMode.XYWH_ABS, BoxMode.XYXY_ABS)
             for obj in anno
             if obj["iscrowd"] == 0
         ]
         gt_boxes = torch.as_tensor(gt_boxes).reshape(-1, 4)  # guard against no boxes
+        print("GT BOXES: " + str(gt_boxes))
         gt_boxes = Boxes(gt_boxes)
         gt_areas = torch.as_tensor([obj["area"] for obj in anno if obj["iscrowd"] == 0])
+        
 
         if len(gt_boxes) == 0 or len(predictions) == 0:
             continue
@@ -518,50 +563,124 @@ def _evaluate_box_proposals(dataset_predictions, coco_api, thresholds=None, area
 
         if limit is not None and len(predictions) > limit:
             predictions = predictions[:limit]
+        
+        print("anno total: " + str(anno))
 
-        overlaps = pairwise_iou(predictions.proposal_boxes, gt_boxes)
+        
+        print("LEN ANNO: " + str(len(anno)))
+        
+        for j in range (len(anno)):
+            
+            print("anno: " + str(anno[j]))
+            if j<len(dataset_predictions[i].get("instances")):
+                print((dataset_predictions[i].get("instances")[j].get("bbox")))
+                # overlaps = pairwise_iou(Boxes(torch.as_tensor(dataset_predictions[i].get("instances")[j].get("bbox")).reshape(-1, 4)), Boxes(torch.as_tensor(anno[j].get("bbox")).reshape(-1, 4)))
+                print("IOU formula: " + str(bb_intersection_over_union(anno[j].get("bbox"), dataset_predictions[i].get("instances")[j].get("bbox"))))
+                iou_f = bb_intersection_over_union(anno[j].get("bbox"), dataset_predictions[i].get("instances")[j].get("bbox"))
+                # print("IOU OVERLAP: "+str(overlaps))
+                # iou.append(overlaps)
+                iou.append(iou_f)
+                prediction_classes.append(str(dataset_predictions[i].get("instances")[j].get("category_id")+1))
+                gt_classes.append(str(anno[j].get("category_id")))
+            
+        i+=1
 
-        _gt_overlaps = torch.zeros(len(gt_boxes))
-        for j in range(min(len(predictions), len(gt_boxes))):
-            # find which proposal box maximally covers each gt box
-            # and get the iou amount of coverage for each gt box
-            max_overlaps, argmax_overlaps = overlaps.max(dim=0)
+    print("IOU total formumla: " + str(sum(iou) / len(iou)))
+    print(gt_classes)
+    print(prediction_classes)
+    precision = sklearn.metrics.precision_score(gt_classes, prediction_classes, average='macro')
+    print("Precision: " + str(round(precision, 4)))
+    recall = sklearn.metrics.recall_score(gt_classes, prediction_classes, average='macro')
+    print("Recall: " + str(round(recall, 4)))
+    accuracy = sklearn.metrics.accuracy_score(gt_classes, prediction_classes)
+    print("Accuracy: " + str(accuracy))
+    f_score = sklearn.metrics.f1_score(gt_classes, prediction_classes, average='macro')
+    print("F-score: " + str(f_score))
+    f = open("Results_rcnn_macro.txt", "a")
+    f.write("\n IOU total: " + str(sum(iou) / len(iou)))
+    f.write("\n Precision: " + str(round(precision, 4)))
+    f.write("\n Recall: " + str(round(recall, 4)))
+    f.write("\n Accuracy: " + str(round(accuracy, 4)))
+    f.write("\n F-score: " + str(round(f_score, 4)))
+    f.close()
+        
+        # print(str(Boxes(torch.Tensor(dataset_predictions[0].get("pred_boxes").tensor[0].cpu().numpy()))))
+        # print(str(dataset_predictions[0].get("instances")[0].get("bbox")))
+        # print(str(gt_boxes))
+        # print(str(Boxes(torch.as_tensor(dataset_predictions[0].get("instances")[0].get("bbox")).reshape(-1, 4))))
 
-            # find which gt box is 'best' covered (i.e. 'best' = most iou)
-            gt_ovr, gt_ind = max_overlaps.max(dim=0)
-            assert gt_ovr >= 0
-            # find the proposal box that covers the best covered gt box
-            box_ind = argmax_overlaps[gt_ind]
-            # record the iou coverage of this gt box
-            _gt_overlaps[j] = overlaps[box_ind, gt_ind]
-            assert _gt_overlaps[j] == gt_ovr
-            # mark the proposal box and the gt box as used
-            overlaps[box_ind, :] = -1
-            overlaps[:, gt_ind] = -1
+        # _gt_overlaps = torch.zeros(len(gt_boxes))
+        # for j in range(min(len(predictions), len(gt_boxes))):
+        #     # find which proposal box maximally covers each gt box
+        #     # and get the iou amount of coverage for each gt box
+        #     max_overlaps, argmax_overlaps = overlaps.max(dim=0)
+
+        #     # find which gt box is 'best' covered (i.e. 'best' = most iou)
+        #     gt_ovr, gt_ind = max_overlaps.max(dim=0)
+        #     assert gt_ovr >= 0
+        #     # find the proposal box that covers the best covered gt box
+        #     box_ind = argmax_overlaps[gt_ind]
+        #     # record the iou coverage of this gt box
+        #     _gt_overlaps[j] = overlaps[box_ind, gt_ind]
+        #     assert _gt_overlaps[j] == gt_ovr
+        #     # mark the proposal box and the gt box as used
+        #     overlaps[box_ind, :] = -1
+        #     overlaps[:, gt_ind] = -1
 
         # append recorded iou coverage level
-        gt_overlaps.append(_gt_overlaps)
-    gt_overlaps = (
-        torch.cat(gt_overlaps, dim=0) if len(gt_overlaps) else torch.zeros(0, dtype=torch.float32)
-    )
-    gt_overlaps, _ = torch.sort(gt_overlaps)
+    #     gt_overlaps.append(_gt_overlaps)
+    # gt_overlaps = (
+    #     torch.cat(gt_overlaps, dim=0) if len(gt_overlaps) else torch.zeros(0, dtype=torch.float32)
+    # )
+    # gt_overlaps, _ = torch.sort(gt_overlaps)
+    # print(str(gt_overlaps))
+    
 
-    if thresholds is None:
-        step = 0.05
-        thresholds = torch.arange(0.5, 0.95 + 1e-5, step, dtype=torch.float32)
-    recalls = torch.zeros_like(thresholds)
-    # compute recall for each iou threshold
-    for i, t in enumerate(thresholds):
-        recalls[i] = (gt_overlaps >= t).float().sum() / float(num_pos)
-    # ar = 2 * np.trapz(recalls, thresholds)
-    ar = recalls.mean()
-    return {
-        "ar": ar,
-        "recalls": recalls,
-        "thresholds": thresholds,
-        "gt_overlaps": gt_overlaps,
-        "num_pos": num_pos,
-    }
+    # if thresholds is None:
+    #     step = 0.05
+    #     thresholds = torch.arange(0.5, 0.95 + 1e-5, step, dtype=torch.float32)
+    # recalls = torch.zeros_like(thresholds)
+    # # compute recall for each iou threshold
+    # for i, t in enumerate(thresholds):
+    #     recalls[i] = (gt_overlaps >= t).float().sum() / float(num_pos)
+    # # ar = 2 * np.trapz(recalls, thresholds)
+    # ar = recalls.mean()
+    # print("AVERAGE RECALL: " + ar)
+    # return {
+    #     "ar": ar,
+    #     "recalls": recalls,
+    #     "thresholds": thresholds,
+    #     "gt_overlaps": gt_overlaps,
+    #     "num_pos": num_pos,
+    # }
+
+def bb_intersection_over_union(boxA, boxB):
+    # determine the (x, y)-coordinates of the intersection rectangle
+    boxA[2] = boxA[2] + boxA[0]
+    boxB[2] = boxB[2] + boxB[0]
+    boxA[3] = boxA[3] + boxA[1]
+    boxB[3] = boxB[3] + boxB[1]
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[2], boxB[2]) 
+    yB = min(boxA[3], boxB[3]) 
+    print("xA: " + str(xA))
+    print("yA: " + str(yA))
+    print("xB: " + str(xB))
+    print("yB: " + str(yB))
+    # compute the area of intersection rectangle
+    interArea = abs(xB - xA) * abs(yB - yA)
+    print("InterArea: " + str(interArea))
+    # compute the area of both the prediction and ground-truth
+    # rectangles
+    boxAArea = abs(boxA[2] - boxA[0]) * abs(boxA[3] - boxA[1])
+    boxBArea = abs(boxB[2] - boxB[0]) * abs(boxB[3] - boxB[1])
+    # compute the intersection over union by taking the intersection
+    # area and dividing it by the sum of prediction + ground-truth
+    # areas - the interesection area
+    iou = interArea / float(boxAArea + boxBArea - interArea)
+    # return the intersection over union value
+    return iou
 
 
 def _evaluate_predictions_on_coco(
@@ -569,7 +688,7 @@ def _evaluate_predictions_on_coco(
     coco_results,
     iou_type,
     kpt_oks_sigmas=None,
-    cocoeval_fn=COCOeval_opt,
+    use_fast_impl=True,
     img_ids=None,
     max_dets_per_image=None,
 ):
@@ -588,7 +707,7 @@ def _evaluate_predictions_on_coco(
             c.pop("bbox", None)
 
     coco_dt = coco_gt.loadRes(coco_results)
-    coco_eval = cocoeval_fn(coco_gt, coco_dt, iou_type)
+    coco_eval = (COCOeval_opt if use_fast_impl else COCOeval)(coco_gt, coco_dt, iou_type)
     # For COCO, the default max_dets_per_image is [1, 10, 100].
     if max_dets_per_image is None:
         max_dets_per_image = [1, 10, 100]  # Default from COCOEval

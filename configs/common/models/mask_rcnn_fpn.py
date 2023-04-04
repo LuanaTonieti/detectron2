@@ -52,7 +52,7 @@ model = L(GeneralizedRCNN)(
         nms_thresh=0.7,
     ),
     roi_heads=L(StandardROIHeads)(
-        num_classes=80,
+        num_classes=1, #80
         batch_size_per_image=512,
         positive_fraction=0.25,
         proposal_matcher=L(Matcher)(
@@ -75,18 +75,6 @@ model = L(GeneralizedRCNN)(
             test_score_thresh=0.05,
             box2box_transform=L(Box2BoxTransform)(weights=(10, 10, 5, 5)),
             num_classes="${..num_classes}",
-        ),
-        mask_in_features=["p2", "p3", "p4", "p5"],
-        mask_pooler=L(ROIPooler)(
-            output_size=14,
-            scales=(1.0 / 4, 1.0 / 8, 1.0 / 16, 1.0 / 32),
-            sampling_ratio=0,
-            pooler_type="ROIAlignV2",
-        ),
-        mask_head=L(MaskRCNNConvUpsampleHead)(
-            input_shape=ShapeSpec(channels=256, width=14, height=14),
-            num_classes="${..num_classes}",
-            conv_dims=[256, 256, 256, 256, 256],
         ),
     ),
     pixel_mean=constants.imagenet_bgr256_mean,

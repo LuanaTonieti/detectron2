@@ -12,7 +12,7 @@ train = dict(
     ),
     checkpointer=dict(period=5000, max_to_keep=100),  # options for PeriodicCheckpointer
     eval_period=5000,
-    log_period=20,
+    log_period=1,
     device="cuda"
     # ...
 )
